@@ -19,12 +19,7 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
 ]
 
-LOCAL_APPS = [
-    "apps.common",
-    "apps.users",
-    "apps.news",
-    "apps.courses",
-]
+LOCAL_APPS = ["apps.common", "apps.users", "apps.news", "apps.courses", "apps.payments"]
 
 EXTERNAL_APPS = ["daphne", "jazzmin", "rest_framework", "drf_yasg"]
 
@@ -155,4 +150,4 @@ AES_KEY = os.getenv("AES_KEY", "")
 RECAPTCHA_PUBLIC_KEY = os.getenv("RECAPTCHA_PUBLIC_KEY")
 RECAPTCHA_PRIVATE_KEY = os.getenv("RECAPTCHA_PRIVATE_KEY")
 
-from core.jazzmin_conf import JAZZMIN_SETTINGS # noqa
+from core.jazzmin_conf import JAZZMIN_SETTINGS  # noqa
