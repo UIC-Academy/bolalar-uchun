@@ -154,3 +154,5 @@ AES_KEY = os.getenv("AES_KEY", "")
 # RECAPTCHA
 RECAPTCHA_PUBLIC_KEY = os.getenv("RECAPTCHA_PUBLIC_KEY")
 RECAPTCHA_PRIVATE_KEY = os.getenv("RECAPTCHA_PRIVATE_KEY")
+
+from core.jazzmin_conf import JAZZMIN_SETTINGS # noqa
