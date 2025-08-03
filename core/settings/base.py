@@ -20,12 +20,13 @@ DJANGO_APPS = [
 ]
 
 LOCAL_APPS = [
-    "apps.common"
+    "apps.common",
+    "apps.users",
 ]
 
-EXTERNAL_APPS = []
+EXTERNAL_APPS = ["daphne", "jazzmin"]
 
-INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS + EXTERNAL_APPS
+INSTALLED_APPS = LOCAL_APPS + EXTERNAL_APPS + DJANGO_APPS
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -54,8 +55,8 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "core.wsgi.application"
-# ASGI_APPLICATION = 'core.asgi.application'
+# WSGI_APPLICATION = "core.wsgi.application"
+ASGI_APPLICATION = "core.asgi.application"
 
 
 DATABASES = {
@@ -69,6 +70,8 @@ DATABASES = {
         "ATOMIC_REQUESTS": True,
     }
 }
+
+AUTH_USER_MODEL = "users.User"
 
 
 # Password validation
