@@ -22,9 +22,11 @@ DJANGO_APPS = [
 LOCAL_APPS = [
     "apps.common",
     "apps.users",
+    "apps.news",
+    "apps.courses",
 ]
 
-EXTERNAL_APPS = ["daphne", "jazzmin"]
+EXTERNAL_APPS = ["daphne", "jazzmin", "rest_framework", "drf_yasg"]
 
 INSTALLED_APPS = LOCAL_APPS + EXTERNAL_APPS + DJANGO_APPS
 
