@@ -96,6 +96,7 @@ class PaylovClient:
     def create_payment_link(cls, transaction: Transaction) -> str:
         credentials = get_credentials()
         merchant_key = credentials["PAYLOV_API_KEY"]
+        print(">>>", credentials, merchant_key)
         return_url = urllib.parse.quote(
             credentials["PAYLOV_REDIRECT_URL"] + f"?transaction_id={transaction.id}",
             safe="",
@@ -104,7 +105,7 @@ class PaylovClient:
         if merchant_key is None:
             raise ValueError("Credentials not found")
 
-        amount = int(transaction.amount) * 100 # in tiyin
+        amount = int(transaction.amount)
         query = f"merchant_id={merchant_key}&amount={amount}&account.order_id={transaction.id}&return_url={return_url}"
         encode_params = base64.b64encode(query.encode("utf-8"))
         encode_params = str(encode_params, "utf-8")

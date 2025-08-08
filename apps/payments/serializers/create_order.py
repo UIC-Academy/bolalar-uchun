@@ -56,5 +56,5 @@ class OrderCreateSerializer(serializers.Serializer):
         return {
             "id": instance.id,
             "amount": instance.amount,
-            "payment_url": PaylovClient.create_payment_link(instance._transaction)
+            "payment_url": instance._transaction.get_payment_url,
         }
