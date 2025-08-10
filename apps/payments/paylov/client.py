@@ -1,10 +1,16 @@
 import base64
 import urllib
-
 import httpx
+import requests
 
+from rest_framework.exceptions import NotFound
+
+from apps.users.models import User
 from apps.payments.choices import TransactionStatus
-from apps.payments.models import Transaction
+from apps.payments.models import Transaction, UserCard, Providers
+from apps.payments.paylov.credentials import get_credentials
+from apps.payments.paylov.errors import error_codes
+from apps.payments.choices import ProviderChoices
 from apps.payments.paylov.constants import (
     API_ENDPOINTS,
     CHECKOUT_BASE_URL,
@@ -12,8 +18,6 @@ from apps.payments.paylov.constants import (
     SUBSCRIPTION_BASE_URL,
     HTTPMethods,
 )
-from apps.payments.paylov.credentials import get_credentials
-from apps.payments.paylov.errors import error_codes
 
 
 class PaylovClient:
@@ -21,6 +25,10 @@ class PaylovClient:
     This class serves as a client for Paylov API.
     The client wraps API endpoints and provides methods
     to interact with the API.
+
+    The Client consists of 2 parts:
+    - Merchant API code
+    - Subscribe API code
     """
 
     def __init__(self, params: dict | None = None) -> None:
@@ -41,8 +49,9 @@ class PaylovClient:
         self.code = STATUS_CODES["SUCCESS"]
         self.transaction = self.get_transaction()
 
-    # Main Functional methods
-    # ----------------
+    """
+        Merchant API code
+    """
 
     def send_request(
         self, to_endpoint: str, payload: dict | None = None, params: dict | None = None
@@ -51,25 +60,21 @@ class PaylovClient:
         url = SUBSCRIPTION_BASE_URL + str(endpoint)
         headers = self.subscription_headers
 
-        if method not in HTTPMethods.choices:
-            raise ValueError("Unsupported HTTP method")
+        method_map = {
+            "POST": requests.post,
+            "GET": requests.get,
+            "DELETE": requests.delete
+        }
 
         try:
-            if method == "GET":
-                response = httpx.get(url, json=payload, headers=headers, params=params)
-            elif method == "POST":
-                response = httpx.post(url, json=payload, headers=headers, params=params)
-            elif method == "DELETE":
-                response = httpx.delete(
-                    url, json=payload, headers=headers, params=params
-                )
+            response = method_map[method](url, json=payload, headers=headers, params=params)
 
             response.raise_for_status()
             response_data = response.json()
 
             return response.ok, response_data
 
-        except httpx.HTTPStatusError as e:
+        except requests.exceptions.HTTPError as e:
             try:
                 response_data = e.response.json()
                 return False, {
@@ -87,7 +92,7 @@ class PaylovClient:
                         "details": "Non-JSON response",
                     }
                 }
-        except httpx.RequestError as e:
+        except requests.exceptions.RequestException as e:
             return False, {"error": {"code": "api_error", "message": str(e)}}
         except ValueError as e:
             return False, {"error": {"code": "invalid_response", "message": str(e)}}
@@ -96,7 +101,6 @@ class PaylovClient:
     def create_payment_link(cls, transaction: Transaction) -> str:
         credentials = get_credentials()
         merchant_key = credentials["PAYLOV_API_KEY"]
-        print(">>>", credentials, merchant_key)
         return_url = urllib.parse.quote(
             credentials["PAYLOV_REDIRECT_URL"] + f"?transaction_id={transaction.id}",
             safe="",
@@ -110,9 +114,210 @@ class PaylovClient:
         encode_params = base64.b64encode(query.encode("utf-8"))
         encode_params = str(encode_params, "utf-8")
         return f"{CHECKOUT_BASE_URL}{encode_params}"
+    
+    """
+        Subscribe API code
+    """
 
-    # Utility methods
-    # ----------------
+    def create_user_card(self, user, card_number: str, expire_month: str, expire_year: str) -> tuple[bool, dict]:
+        expire_date_str = expire_year + expire_month  # MM/YY -> YYMM
+
+        payload = {
+            "userId": str(user.id),
+            "cardNumber": str(card_number),
+            "expireDate": str(expire_date_str)
+        }
+
+        # user_card = UserCard.objects.filter(user=user, card_number=card_number).first()
+
+        # if user_card and user_card.confirmed:
+        #     return self.get_error_response("card_exists")
+
+        success, response_data = self.send_request("CREATE_CARD", payload=payload)
+
+        print(">>>", success, response_data)
+
+        if success:
+            otp_sent_phone = response_data["result"]["otpSentPhone"]
+            card_id = response_data["result"]["cid"]
+
+            user_card, _ = UserCard.objects.create(
+                user=user,
+                card_token=card_id,
+                defaults={
+                    "expire_date": expire_date_str,
+                    "provider": ProviderChoices.PAYLOV,
+                    "is_confirmed": False
+                }
+            )
+
+            return True, {"otp_sent_phone": otp_sent_phone, "card_id": user_card.id}
+
+        error_code = response_data.get("error", {"code": "unknown_error"})["code"]
+        return self.get_error_response(error_code)
+
+    def confirm_user_card(self, user: User, card_id: int, otp: str, card_name: str | None) -> tuple[bool, dict]:
+        try:
+            card = UserCard.objects.get(user=user, card_token=card_id)
+        except UserCard.DoesNotExist:
+            return self.get_error_response("card_not_found")
+
+        if card.is_confirmed:
+            return self.get_error_response("card_is_already_activated")
+
+        payload = {
+            "cardId": card.card_id,
+            "otp": otp,
+            "card_name": card_name or "User"
+        }
+
+        success, response_data = self.send_request("CONFIRM_CARD", payload=payload)
+
+        if success or response_data.get("error", {}).get("code") == "card_is_already_activated":
+            card.confirmed = True
+            card.save(update_fields=["confirmed"])
+            return True, {"card_id": card.id, "confirmed": True}
+
+        error_code = response_data.get("error", {"code": "unknown_error"})["code"]
+        return self.get_error_response(error_code)
+
+    def get_user_cards(self, user_id: str) -> tuple[bool, dict]:
+        query_params = {"userId": str(user_id)}
+        success, response_data = self.api_request("GET_CARDS", params=query_params)
+
+        if success:
+            return success, response_data
+
+        error_code = response_data.get("error", {"code": "unknown_error"})["code"]
+        return self.get_error_response(error_code)
+
+    def delete_user_card(self, user: User, card_id: str) -> tuple[bool, dict]:
+        card = UserCard.objects.filter(id=int(card_id)).first()
+
+        if not card:
+            raise NotFound("User card not found", code="card_not_found")
+
+        query_param = {"userCardId": card.card_id}
+        success, response_data = self.api_request("DELETE_CARD", params=query_param)
+
+        if success:
+            card.soft_delete()
+            response_data = {
+                "detail": "User card is deleted successfully",
+                "code": 204
+            }
+            return success, response_data
+
+        error_code = response_data.get("error", {"code": "unknown_error"})["code"]
+        return self.get_error_response(error_code)
+
+    # def create_receipt(self, user: User, card_id: int, amount: int, meditation_id: int = None, event_id: int = None) -> \
+    #         tuple[bool, dict]:
+    #     try:
+    #         user_card = UserCard.objects.get(pk=card_id)
+    #     except UserCard.DoesNotExist:
+    #         return self.get_error_response("card_not_found")
+
+    #     if not user_card.confirmed:
+    #         return self.get_error_response("card_is_not_activated")
+
+    #     meditation = Meditation.objects.filter(id=meditation_id).first() if meditation_id else None
+    #     event = Event.objects.filter(id=event_id).first() if event_id else None
+
+    #     if meditation_id and not meditation:
+    #         raise NotFound("Meditation not found")
+    #     if event_id and not event:
+    #         raise NotFound("Event not found")
+
+    #     if not (meditation or event):
+    #         raise NotFound("Either Meditation or Event must be provided")
+
+    #     provider = Providers.objects.filter(provider=Providers.ProviderChoices.PAYLOV, is_active=True).first()
+    #     if not provider:
+    #         raise APIException("Paylov provider not configured")
+
+    #     order = Order.objects.create(
+    #         user=user,
+    #         meditation=meditation,
+    #         event=event,
+    #         amount=amount,
+    #         is_paid=False
+    #     )
+
+    #     transaction = Transaction.objects.create(
+    #         order=order,
+    #         provider=provider.provider,
+    #         amount=amount,
+    #         status=Transaction.TransactionStatus.WAITING
+    #     )
+
+    #     payload = {
+    #         "userId": str(user.id),
+    #         "amount": int(amount),
+    #         "account": {
+    #             "order_id": transaction.id
+    #         }
+    #     }
+
+    #     success, response_data = self.api_request("CREATE_RECEIPT", payload=payload)
+
+    #     if success:
+    #         transaction.reference = response_data["result"]["transactionId"]
+    #         transaction.provider = provider.provider
+    #         transaction.save(update_fields=["reference", "provider"])
+    #         response_data["transaction"] = transaction
+    #         response_data["user_card"] = user_card
+    #         return success, response_data
+
+    #     error_code = response_data.get("error", {"code": "unknown_error"})["code"]
+    #     return self.get_error_response(error_code)
+
+    # def pay_receipt(self, transaction: Transaction, card: UserCard) -> Tuple[bool, Dict]:
+    #     payload = {
+    #         "transactionId": transaction.reference,
+    #         "cardId": card.card_id
+    #     }
+
+    #     success, response_data = self.api_request("PAY_RECEIPT", payload=payload)
+
+    #     if success:
+    #         transaction_id = response_data.get("result", {}).get("transactionId")
+    #         if not transaction_id:
+    #             return False, {"error": {"code": "invalid_response", "message": "No transactionId in response"}}
+
+    #         try:
+    #             transaction_from_db = Transaction.objects.get(id=transaction.id)
+
+    #             with db_transaction.atomic():
+    #                 transaction_from_db.apply_transaction(
+    #                     provider=Providers.ProviderChoices.PAYLOV,
+    #                     transaction_id=transaction_id,
+    #                     card=card
+    #                 )
+
+    #                 transaction_from_db.refresh_from_db()
+    #                 if transaction_from_db.status != Transaction.TransactionStatus.SUCCESS:
+    #                     raise ValueError(f"Transaction status failed to update to SUCCESS, "
+    #                                      f"current status: {transaction_from_db.status}")
+
+    #             transaction.refresh_from_db()
+
+    #             response_data = {
+    #                 "detail": "Payment is applied successfully",
+    #                 "code": "payment_success",
+    #                 "status": 200
+    #             }
+    #             return success, response_data
+
+    #         except Exception as e:
+    #             return False, {"error": {"code": "transaction_error", "message": str(e)}}
+
+    #     error_code = response_data.get("error", {"code": "unknown_error"})["code"]
+    #     return self.get_error_response(error_code)
+
+    """
+        Utility methods
+    """
 
     def get_transaction(self) -> Transaction | None:
         """
@@ -132,6 +337,15 @@ class PaylovClient:
         )
 
         error_response = {"detail": error_details[1], "code": error_details[0]}
+        return False, error_response
+    
+    @staticmethod
+    def get_error_response(error_code: str) -> tuple[bool, dict]:
+        error_details = error_codes.get(str(error_code).upper(), ["unknown_error", "Unknown error"])
+        error_response = {
+            "detail": error_details[1],
+            "code": error_details[0]
+        }
         return False, error_response
 
     def check_transaction(self) -> tuple[bool, str]:

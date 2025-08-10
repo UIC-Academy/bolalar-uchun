@@ -138,6 +138,29 @@ class Transaction(BaseModel):
         self.order.save(update_fields=["is_paid"])
 
         return self
+    
+
+class UserCard(BaseModel):
+    user = models.ForeignKey(
+        "users.User", on_delete=models.CASCADE, related_name="user_cards", verbose_name=_("User")
+    )
+    card_token = models.CharField(max_length=255, verbose_name=_("Card Token"))
+    provider = models.ForeignKey(
+        "payments.Providers", on_delete=models.CASCADE, verbose_name=_("Provider")
+    )
+    cardholder_name = models.CharField(max_length=255, verbose_name=_("Cardholder Name"))
+    last_four_digits = models.CharField(max_length=4, verbose_name=_("Last Four Digits"))
+    brand = models.CharField(max_length=255, verbose_name=_("Brand"))
+    expire_month = models.CharField(max_length=2, verbose_name=_("Expire Month"))
+    expire_year = models.CharField(max_length=4, verbose_name=_("Expire Year"))
+    is_confirmed = models.BooleanField(default=False, verbose_name=_("Is confirmed"))
+
+    class Meta:
+        verbose_name = _("User Card")
+        verbose_name_plural = _("User Cards")
+
+    def __str__(self):
+        return f"User Card: {self.id}"
 
 
 class Providers(BaseModel):
