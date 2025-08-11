@@ -120,7 +120,7 @@ class PaylovClient:
     """
 
     def create_user_card(self, user, card_number: str, expire_month: str, expire_year: str) -> tuple[bool, dict]:
-        expire_date_str = expire_year + expire_month  # MM/YY -> YYMM
+        expire_date_str = expire_year + expire_month  # MM/YY -> YYMM | 06/29 2906
 
         payload = {
             "userId": str(user.id),
@@ -141,14 +141,19 @@ class PaylovClient:
             otp_sent_phone = response_data["result"]["otpSentPhone"]
             card_id = response_data["result"]["cid"]
 
-            user_card, _ = UserCard.objects.create(
+            paylov_provider = Providers.objects.filter(key="paylov").last()
+            is_already_exists = UserCard.objects.filter(user=user, card_token=card_id).exists()
+
+            if is_already_exists:
+                return self.get_error_response("card_exists")
+
+            user_card = UserCard.objects.create(
                 user=user,
                 card_token=card_id,
-                defaults={
-                    "expire_date": expire_date_str,
-                    "provider": ProviderChoices.PAYLOV,
-                    "is_confirmed": False
-                }
+                provider=paylov_provider,
+                expire_month=expire_month,
+                expire_year=expire_year,
+                is_confirmed=False
             )
 
             return True, {"otp_sent_phone": otp_sent_phone, "card_id": user_card.id}
@@ -158,7 +163,8 @@ class PaylovClient:
 
     def confirm_user_card(self, user: User, card_id: int, otp: str, card_name: str | None) -> tuple[bool, dict]:
         try:
-            card = UserCard.objects.get(user=user, card_token=card_id)
+            print(user, card_id, otp, card_name)
+            card = UserCard.objects.get(user=user, id=card_id)
         except UserCard.DoesNotExist:
             return self.get_error_response("card_not_found")
 
@@ -166,7 +172,7 @@ class PaylovClient:
             return self.get_error_response("card_is_already_activated")
 
         payload = {
-            "cardId": card.card_id,
+            "cardId": card.card_token,
             "otp": otp,
             "card_name": card_name or "User"
         }
@@ -174,11 +180,23 @@ class PaylovClient:
         success, response_data = self.send_request("CONFIRM_CARD", payload=payload)
 
         if success or response_data.get("error", {}).get("code") == "card_is_already_activated":
-            card.confirmed = True
-            card.save(update_fields=["confirmed"])
-            return True, {"card_id": card.id, "confirmed": True}
+            card_data = response_data.get("result", {}).get("card", {})
+            
+            if card_data:
+                card.is_confirmed = True
+                card.cardholder_name = card_data.get("owner", "")
+                card.last_four_digits = card_data.get("number")[-4:]
+                card.save(update_fields=["is_confirmed"])
+                return True, {"card_token": card.card_token, "is_confirmed": True}
 
-        error_code = response_data.get("error", {"code": "unknown_error"})["code"]
+        error_code = response_data.get(
+            "error", {"code": "unknown_error"}
+        ).get(
+            "details", {"code": "unknown_error"}
+        ).get(
+            "error", {"code": "unknown_error"}
+        )["code"]
+        print(">>>", error_code)
         return self.get_error_response(error_code)
 
     def get_user_cards(self, user_id: str) -> tuple[bool, dict]:

@@ -148,9 +148,9 @@ class UserCard(BaseModel):
     provider = models.ForeignKey(
         "payments.Providers", on_delete=models.CASCADE, verbose_name=_("Provider")
     )
-    cardholder_name = models.CharField(max_length=255, verbose_name=_("Cardholder Name"))
-    last_four_digits = models.CharField(max_length=4, verbose_name=_("Last Four Digits"))
-    brand = models.CharField(max_length=255, verbose_name=_("Brand"))
+    cardholder_name = models.CharField(max_length=255, verbose_name=_("Cardholder Name"), null=True, blank=True)
+    last_four_digits = models.CharField(max_length=4, verbose_name=_("Last Four Digits"), null=True, blank=True)
+    brand = models.CharField(max_length=255, verbose_name=_("Brand"), null=True, blank=True)
     expire_month = models.CharField(max_length=2, verbose_name=_("Expire Month"))
     expire_year = models.CharField(max_length=4, verbose_name=_("Expire Year"))
     is_confirmed = models.BooleanField(default=False, verbose_name=_("Is confirmed"))
