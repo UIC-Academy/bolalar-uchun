@@ -5,26 +5,23 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.payments.paylov.client import PaylovClient
-from apps.payments.serializers import AddUserCardSerializer
+from apps.payments.serializers import DeleteUserCardSerializer
 
 
-class AddUserCardAPIView(APIView):
-    serializer_class = AddUserCardSerializer
+class DeleteUserCardAPIView(APIView):
+    serializer_class = DeleteUserCardSerializer
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        request_body=AddUserCardSerializer,
+        request_body=DeleteUserCardSerializer,
         responses={200: "Success", 400: "Validation Error"},
     )
-    def post(self, request, *args, **kwargs):
+    def delete(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        _, response = PaylovClient().create_user_card(
-            user=request.user,
-            card_number=serializer.validated_data["card_number"],
-            expire_month=serializer.validated_data["exp_month"],
-            expire_year=serializer.validated_data["exp_year"],
+        _, response = PaylovClient().delete_user_card(
+            card_id=serializer.validated_data("card_id")
         )
 
         return Response(data=response, status=status.HTTP_200_OK)
