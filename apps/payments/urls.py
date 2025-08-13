@@ -7,6 +7,8 @@ from apps.payments.views import (
     GetSingleUserCardAPIView,
     ListUserCardsAPIView,
     OrderCreateAPIView,
+    UserCardReceiptCreateAPIView,
+    UserCardReceiptConfirmAPIView,
 )
 
 app_name = "payments"
@@ -29,6 +31,10 @@ urlpatterns = [
         GetSingleUserCardAPIView.as_view(),
         name="single-usercard",
     ),
+    path(
+        "usercard/receipt/create/", UserCardReceiptCreateAPIView.as_view(), name="create-receipt"
+    ),
+    path("usercard/receipt/pay/", UserCardReceiptConfirmAPIView.as_view(), name="pay-receipt"),
     # Payment Provider callbacks
     path("paylov/", include("apps.payments.paylov.urls", namespace="paylov")),
 ]
