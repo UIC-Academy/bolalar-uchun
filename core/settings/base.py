@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -7,7 +8,6 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
-ALLOWED_HOSTS = ["*"]
 
 
 DJANGO_APPS = [
@@ -19,14 +19,15 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
 ]
 
-LOCAL_APPS = [
-    "apps.common",
-    "apps.users",
-    "apps.news",
-    "apps.courses",
-]
+LOCAL_APPS = ["apps.common", "apps.users", "apps.news", "apps.courses", "apps.payments"]
 
-EXTERNAL_APPS = ["daphne", "jazzmin", "rest_framework", "drf_yasg"]
+EXTERNAL_APPS = [
+    "daphne",
+    "jazzmin",
+    "rest_framework",
+    "drf_yasg",
+    "rest_framework_simplejwt",
+]
 
 INSTALLED_APPS = LOCAL_APPS + EXTERNAL_APPS + DJANGO_APPS
 
@@ -155,4 +156,29 @@ AES_KEY = os.getenv("AES_KEY", "")
 RECAPTCHA_PUBLIC_KEY = os.getenv("RECAPTCHA_PUBLIC_KEY")
 RECAPTCHA_PRIVATE_KEY = os.getenv("RECAPTCHA_PRIVATE_KEY")
 
-from core.jazzmin_conf import JAZZMIN_SETTINGS # noqa
+from core.jazzmin_conf import JAZZMIN_SETTINGS  # noqa
+
+
+# REST_FRAMEWORK settings
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_THROTTLE_CLASSES": [],
+    "DEFAULT_THROTTLE_RATES": {},
+    "UNAUTHENTICATED_USER": None,
+    "UNAUTHENTICATED_TOKEN": None,
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=15),
+}
+
+SWAGGER_SETTINGS = {
+    "USE_SESSION_AUTH": False,
+    "SECURITY_DEFINITIONS": {
+        "api_key": {"type": "apiKey", "in": "header", "name": "Authorization"}
+    },
+}
