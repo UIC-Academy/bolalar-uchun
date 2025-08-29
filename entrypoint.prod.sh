@@ -1,5 +1,8 @@
 #!/bin/sh
 
+echo "Applying database migrations for production..."
+python manage.py migrate
+
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
